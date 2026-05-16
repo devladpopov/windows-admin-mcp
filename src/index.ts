@@ -6,16 +6,22 @@ import { registerServicesModule } from "./modules/services/index.js";
 import { registerEventsModule } from "./modules/events/index.js";
 import { registerSchedulerModule } from "./modules/scheduler/index.js";
 
+if (process.platform !== "win32") {
+  console.error("windows-admin-mcp only runs on Windows.");
+  process.exit(1);
+}
+
 const server = new McpServer({
   name: "windows-admin-mcp",
   version: "0.1.0",
 });
 
-// Register all modules
 registerServicesModule(server);
 registerEventsModule(server);
 registerSchedulerModule(server);
 
-// Start server
 const transport = new StdioServerTransport();
-await server.connect(transport);
+await server.connect(transport).catch((err) => {
+  console.error("Failed to start MCP server:", err);
+  process.exit(1);
+});
