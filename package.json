@@ -1,0 +1,47 @@
+{
+  "name": "windows-admin-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Windows system administration: Services, Event Viewer, Task Scheduler, and more",
+  "keywords": [
+    "mcp",
+    "windows",
+    "services",
+    "event-viewer",
+    "task-scheduler",
+    "sysadmin",
+    "devops",
+    "model-context-protocol"
+  ],
+  "license": "MIT",
+  "author": "Vladislav Popov",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devladpopov/windows-admin-mcp"
+  },
+  "type": "module",
+  "bin": {
+    "windows-admin-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
