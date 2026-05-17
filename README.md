@@ -1,30 +1,39 @@
 # windows-admin-mcp
 
-MCP server for Windows system administration. Manage Services, Event Viewer, and Task Scheduler through any MCP-compatible AI assistant (Claude Desktop, Cursor, Windsurf, etc.).
+AI SRE Agent for Windows. An MCP server that gives AI assistants (Claude Desktop, Cursor, Windsurf, Claude Code) the ability to manage, monitor, and diagnose Windows systems.
 
-Unlike general-purpose Windows automation tools, this server focuses specifically on **sysadmin and DevOps workflows**: monitoring services, investigating event logs, and managing scheduled tasks.
+Not just a PowerShell wrapper: includes multi-step diagnostics, trend analysis, safety controls, and audit logging.
 
-## Features
+**42 tools** across **8 modules** + **3 MCP resources**.
 
-### Services Management
+## Quick Start
+
+```bash
+npx windows-admin-mcp
+```
+
+## Modules
+
+### Services (6 tools)
 | Tool | Description |
 |------|-------------|
 | `services_list` | List services with optional status/name filter |
 | `services_get` | Get detailed info including dependencies |
 | `services_start` | Start a service |
-| `services_stop` | Stop a service (with optional force) |
-| `services_restart` | Restart a service |
+| `services_stop` | Stop a service (confirmation required) |
+| `services_restart` | Restart a service (confirmation required) |
 | `services_set_startup` | Change startup type (Automatic, Manual, Disabled) |
 
-### Event Viewer
+### Event Viewer (5 tools)
 | Tool | Description |
 |------|-------------|
 | `events_query` | Query events by log, level, source, time range, keyword |
 | `events_logs_list` | List available event logs with record counts |
 | `events_sources_list` | List event sources for a specific log |
+| `events_explain` | Explain Event ID: description, causes, fixes (built-in KB) |
 | `events_summary` | Summary of recent events grouped by level |
 
-### Task Scheduler
+### Task Scheduler (8 tools)
 | Tool | Description |
 |------|-------------|
 | `scheduler_list` | List tasks with optional path/state filter |
@@ -33,26 +42,117 @@ Unlike general-purpose Windows automation tools, this server focuses specificall
 | `scheduler_disable` | Disable a task |
 | `scheduler_run` | Run a task immediately |
 | `scheduler_create` | Create a new scheduled task |
-| `scheduler_delete` | Delete a task |
+| `scheduler_delete` | Delete a task (confirmation required) |
 | `scheduler_history` | Get task execution history |
 
-## Installation
+### Processes (4 tools)
+| Tool | Description |
+|------|-------------|
+| `processes_list` | List processes sorted by CPU/Memory/Name |
+| `processes_get` | Detailed process info (CPU, memory, path, threads) |
+| `processes_kill` | Kill a process by name or PID (confirmation + blocklist) |
+| `processes_ports` | Which process holds which TCP port |
 
-```bash
-npx windows-admin-mcp
-```
+### Network (4 tools)
+| Tool | Description |
+|------|-------------|
+| `network_ping` | ICMP ping to a host |
+| `network_check_port` | Check if a TCP port is open on a remote host |
+| `network_dns` | DNS lookup (A, AAAA, MX, CNAME, NS, TXT, etc.) |
+| `network_connections` | List active TCP connections with process info |
 
-Or install globally:
+### Diagnostics (4 tools)
+| Tool | Description |
+|------|-------------|
+| `diagnose_service` | Multi-step diagnosis: status, port, errors, deps, hypothesis |
+| `system_health` | Full health overview: CPU, RAM, disk, top processes, errors |
+| `services_bulk` | Bulk start/stop/restart services by pattern (with limits) |
+| `scheduler_bulk` | Bulk enable/disable tasks by pattern (with limits) |
 
-```bash
-npm install -g windows-admin-mcp
+### Observability (5 tools)
+| Tool | Description |
+|------|-------------|
+| `events_watch` | Poll for new Critical/Error events (delta only, watermark) |
+| `services_watch` | Detect auto-start services that are stopped |
+| `system_changes` | What changed in last N hours (new services, tasks, state) |
+| `error_trends` | Error rate trend analysis (growing/shrinking/stable) |
+| `service_restarts` | Service restart frequency, crash detection |
+
+### Safety & Audit (6 tools)
+| Tool | Description |
+|------|-------------|
+| `config_get` | View current safety/audit configuration |
+| `config_reload` | Reload config from file |
+| `confirm_action` | Confirm a pending destructive action |
+| `pending_actions` | List pending confirmations |
+| `cancel_action` | Cancel a pending action |
+| `audit_query` | Query the audit log |
+
+### MCP Resources
+| Resource | URI | Description |
+|----------|-----|-------------|
+| System Info | `system://info` | OS, CPU, RAM, uptime, hostname |
+| System Health | `system://health` | Live health status with overall rating |
+| Services Summary | `system://services` | Service counts by status and startup type |
+
+## Safety Features
+
+Destructive operations (`kill`, `stop`, `restart`, `delete`, `bulk`) are protected:
+
+- **Confirmation flow**: Returns a preview + `confirmationId`. Call `confirm_action` to proceed.
+- **Blocklist**: Critical processes (`lsass`, `csrss`, `svchost`, `winlogon`, etc.) are blocked by default.
+- **Bulk limits**: Maximum 20 operations per bulk call (configurable).
+- **Audit log**: All operations logged to JSONL file with timestamps.
+
+Disable confirmation for trusted environments:
+```json
+{
+  "safety": {
+    "requireConfirmation": false
+  }
+}
 ```
 
 ## Configuration
 
+Create a `config.json` next to the installed package, or set `WINDOWS_ADMIN_MCP_CONFIG` env var:
+
+```json
+{
+  "modules": {
+    "services": true,
+    "events": true,
+    "scheduler": true,
+    "processes": true,
+    "network": true,
+    "diagnostics": true,
+    "safety": true,
+    "observability": true
+  },
+  "safety": {
+    "requireConfirmation": true,
+    "confirmationTimeoutMs": 300000,
+    "blocklist": ["lsass", "csrss", "svchost", "winlogon", "smss"],
+    "allowlist": []
+  },
+  "limits": {
+    "maxProcessesToKill": 5,
+    "maxEventsToReturn": 500,
+    "maxBulkOperations": 20
+  },
+  "audit": {
+    "enabled": true,
+    "path": "./windows-admin-mcp-audit.jsonl",
+    "maxSizeMB": 50
+  }
+}
+```
+
+## Setup
+
 ### Claude Desktop
 
-Add to your `claude_desktop_config.json`:
+Add to `claude_desktop_config.json`:
 
 ```json
 {
@@ -67,8 +167,6 @@ Add to your `claude_desktop_config.json`:
 
 ### Cursor / Windsurf
 
-Add to your MCP settings:
-
 ```json
 {
   "windows-admin": {
@@ -80,7 +178,7 @@ Add to your MCP settings:
 
 ### Claude Code
 
-Add to your `.mcp.json`:
+Add to `.mcp.json`:
 
 ```json
 {
@@ -93,62 +191,49 @@ Add to your `.mcp.json`:
 }
 ```
 
+## Usage Examples
+
+**"Why is SQL Server not working?"**
+```
+diagnose_service(name: "MSSQLSERVER", port: 1433)
+```
+Runs 4-step chain: service status, port check, recent errors, dependencies. Returns hypothesis.
+
+**"Is the system healthy?"**
+```
+system_health()
+```
+Single call: CPU, RAM, disk, top processes, recent errors, stopped auto-start services.
+
+**"Are errors increasing?"**
+```
+error_trends(logName: "System", hours: 24)
+```
+Hourly breakdown with trend (growing/shrinking/stable), top sources, top event IDs.
+
+**"What changed in the last hour?"**
+```
+system_changes(hours: 1)
+```
+New services installed, service state changes, new scheduled tasks.
+
+**"Kill the process on port 3000"**
+```
+processes_ports(port: 3000)     # Find the process
+processes_kill(pid: 12345)      # Returns confirmationId
+confirm_action(confirmationId: "...")  # Execute
+```
+
 ## Requirements
 
 - Windows 10/11 or Windows Server 2016+
 - Node.js 18+
 - PowerShell 5.1+ (included with Windows)
-- Administrator privileges (for service control and task management)
-
-## Usage Examples
-
-**"Show me all stopped services that normally auto-start"**
-```
-services_list(status: "Stopped") → then filter by StartType: Automatic
-```
-
-**"What errors happened in the last hour?"**
-```
-events_query(logName: "System", level: "Error", afterTime: "2024-01-15T12:00:00")
-```
-
-**"Restart the Print Spooler service"**
-```
-services_restart(name: "Spooler")
-```
-
-**"Create a daily backup task"**
-```
-scheduler_create(
-  taskName: "DailyBackup",
-  execute: "powershell.exe",
-  arguments: "-File C:\\Scripts\\backup.ps1",
-  triggerType: "Daily",
-  triggerTime: "02:00",
-  runLevel: "Highest"
-)
-```
-
-## Permissions Note
-
-Some operations require elevated (Administrator) privileges:
-- Starting/stopping services
-- Creating/deleting scheduled tasks
-- Reading Security event logs
-
-Read-only operations (listing services, querying non-Security event logs) work without elevation.
-
-## Roadmap
-
-- [ ] **v0.2**: System module (clipboard, volume, Wi-Fi, Bluetooth)
-- [ ] **v0.3**: Media transport controls (play/pause/next)
-- [ ] **v0.4**: Notifications center integration
-- [ ] **v0.5**: Performance counters and process management
-- [ ] **v1.0**: Stable release with full documentation
+- Administrator privileges (for service control and some event logs)
 
 ## Contributing
 
-Contributions are welcome! Please open an issue first to discuss what you'd like to change.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
@@ -158,56 +243,35 @@ MIT
 
 # windows-admin-mcp (RU)
 
-MCP-сервер для администрирования Windows. Управление службами, просмотр событий и планировщик задач через любого MCP-совместимого AI-ассистента (Claude Desktop, Cursor, Windsurf и др.).
+AI SRE агент для Windows. MCP-сервер, позволяющий AI-ассистентам управлять, мониторить и диагностировать Windows.
 
-В отличие от универсальных инструментов автоматизации Windows, этот сервер фокусируется на **задачах системного администрирования и DevOps**: мониторинг служб, расследование событий, управление расписаниями.
+Не просто обертка над PowerShell: многошаговая диагностика, анализ трендов, система безопасности, аудит.
 
-## Возможности
+**42 инструмента**, **8 модулей**, **3 MCP-ресурса**.
 
-### Управление службами
-- `services_list` : список служб с фильтрацией по статусу/имени
-- `services_get` : подробная информация включая зависимости
-- `services_start` / `services_stop` / `services_restart` : управление жизненным циклом
-- `services_set_startup` : изменение типа запуска
-
-### Просмотр событий (Event Viewer)
-- `events_query` : запрос событий по журналу, уровню, источнику, времени, ключевому слову
-- `events_logs_list` : список доступных журналов
-- `events_sources_list` : список источников событий
-- `events_summary` : сводка по уровням за последние N часов
-
-### Планировщик задач (Task Scheduler)
-- `scheduler_list` / `scheduler_get` : просмотр задач
-- `scheduler_enable` / `scheduler_disable` : включение/отключение
-- `scheduler_run` : немедленный запуск
-- `scheduler_create` / `scheduler_delete` : создание и удаление
-- `scheduler_history` : история выполнения
-
-## Установка
+## Быстрый старт
 
 ```bash
 npx windows-admin-mcp
 ```
 
-## Настройка для Claude Desktop
+## Модули
 
-```json
-{
-  "mcpServers": {
-    "windows-admin": {
-      "command": "npx",
-      "args": ["-y", "windows-admin-mcp"]
-    }
-  }
-}
-```
+- **Services** (6): управление службами Windows
+- **Event Viewer** (5): запросы, объяснение Event ID, сводки
+- **Task Scheduler** (8): полное управление планировщиком
+- **Processes** (4): список, детали, kill, порты
+- **Network** (4): ping, порты, DNS, соединения
+- **Diagnostics** (4): diagnose_service, system_health, bulk-операции
+- **Observability** (5): watch mode, обнаружение изменений, тренды ошибок
+- **Safety & Audit** (6): конфигурация, подтверждение, аудит
 
-## Требования
+## Безопасность
 
-- Windows 10/11 или Windows Server 2016+
-- Node.js 18+
-- PowerShell 5.1+ (включён в Windows)
-- Права администратора (для управления службами и задачами)
+- Деструктивные операции требуют подтверждения через `confirm_action`
+- Критические процессы (lsass, csrss, svchost) в блок-листе
+- Лимит на массовые операции (20 по умолчанию)
+- Все действия логируются в JSONL-файл
 
 ## Лицензия
 

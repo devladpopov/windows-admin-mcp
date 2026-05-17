@@ -1,6 +1,6 @@
 {
   "name": "windows-admin-mcp",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "description": "MCP server for Windows system administration: Services, Event Viewer, Task Scheduler, and more",
   "keywords": [
     "mcp",
@@ -31,6 +31,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "test": "node --import tsx --test test/*.test.ts",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
