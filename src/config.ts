@@ -29,6 +29,7 @@ export interface ModulesConfig {
   network: boolean;
   diagnostics: boolean;
   safety: boolean;
+  observability: boolean;
 }
 
 export interface AppConfig {
@@ -47,6 +48,7 @@ const DEFAULT_CONFIG: AppConfig = {
     network: true,
     diagnostics: true,
     safety: true,
+    observability: true,
   },
   safety: {
     requireConfirmation: true,
