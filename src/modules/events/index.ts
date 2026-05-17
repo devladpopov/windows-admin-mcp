@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { escapePsString, runPowerShellJson } from "../../utils/powershell.js";
+import { EVENT_ID_DATABASE } from "../../data/event-ids.js";
 
 export function registerEventsModule(server: McpServer) {
   server.tool(
@@ -74,6 +75,50 @@ export function registerEventsModule(server: McpServer) {
       const cmd = `Get-WinEvent -ListProvider * -ErrorAction SilentlyContinue | Where-Object { $_.LogLinks.LogName -contains '${escapePsString(logName)}' } | Select-Object Name | Sort-Object Name`;
       const result = await runPowerShellJson(cmd);
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "events_explain",
+    "Explain a Windows Event ID — what it means, common causes, and suggested fixes.",
+    {
+      eventId: z.number().describe("Windows Event ID to explain"),
+      source: z.string().optional().describe("Event source/provider name (helps narrow down the explanation)"),
+    },
+    async ({ eventId, source }) => {
+      const id = Math.floor(eventId);
+      let matches = EVENT_ID_DATABASE.filter((e) => e.id === id);
+
+      if (source && matches.length > 1) {
+        const sourceFiltered = matches.filter(
+          (e) => e.source.toLowerCase().includes(source.toLowerCase())
+        );
+        if (sourceFiltered.length > 0) matches = sourceFiltered;
+      }
+
+      if (matches.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: `Event ID ${id} is not in the built-in knowledge base. Try searching online for "Windows Event ID ${id}${source ? ` ${source}` : ""}" or check the event message text for details.`,
+          }],
+        };
+      }
+
+      const explanations = matches.map((entry) => ({
+        eventId: entry.id,
+        source: entry.source,
+        description: entry.description,
+        commonCauses: entry.commonCauses,
+        suggestedFixes: entry.suggestedFixes,
+      }));
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(explanations.length === 1 ? explanations[0] : explanations, null, 2),
+        }],
+      };
     }
   );
 
