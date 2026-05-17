@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { escapePsString, runPowerShell, runPowerShellJson } from "../../utils/powershell.js";
+import { needsConfirmation, requestConfirmation } from "../../safety.js";
+import { auditedCall } from "../../audit.js";
+import { getConfig } from "../../config.js";
 
 export function registerDiagnosticsModule(server: McpServer) {
   // ── Tool 1: diagnose_service ──────────────────────────────────────────
@@ -205,7 +208,7 @@ $stoppedAuto = Get-Service | Where-Object { $_.StartType -eq 'Automatic' -and $_
   // ── Tool 3: services_bulk ─────────────────────────────────────────────
   server.tool(
     "services_bulk",
-    "Perform an action (Start, Stop, Restart) on all Windows services matching a name pattern.",
+    "Perform an action (Start, Stop, Restart) on all Windows services matching a name pattern. Subject to limits.maxBulkOperations and confirmation flow.",
     {
       namePattern: z.string().describe("Service name pattern (wildcard supported, e.g. 'sql*', '*web*')"),
       action: z.enum(["Start", "Stop", "Restart"]).describe("Action to perform on matching services"),
@@ -240,37 +243,78 @@ $stoppedAuto = Get-Service | Where-Object { $_.StartType -eq 'Automatic' -and $_
         };
       }
 
-      // Perform action on each service
-      const results: Array<{ name: string; action: string; success: boolean; newStatus?: string; error?: string }> = [];
-      for (const svc of services) {
-        const svcEscaped = escapePsString(svc.Name);
-        try {
-          await runPowerShell(`${action}-Service -Name '${svcEscaped}' -Force -ErrorAction Stop`);
-          const { stdout } = await runPowerShell(`(Get-Service -Name '${svcEscaped}').Status.ToString()`);
-          results.push({ name: svc.Name, action, success: true, newStatus: stdout.trim() });
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          results.push({ name: svc.Name, action, success: false, error: message });
-        }
+      // Check bulk limit
+      const maxBulk = getConfig().limits.maxBulkOperations;
+      if (services.length > maxBulk) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Too many services matched (${services.length}). Maximum allowed bulk operations: ${maxBulk}. Narrow your pattern.`,
+          }],
+          isError: true,
+        };
       }
 
-      const summary = {
-        pattern: namePattern,
-        action,
-        totalMatched: services.length,
-        succeeded: results.filter((r) => r.success).length,
-        failed: results.filter((r) => !r.success).length,
-        results,
+      const execute = async () => {
+        return await auditedCall("services_bulk", { namePattern, action, count: services.length }, async () => {
+          const results: Array<{ name: string; action: string; success: boolean; newStatus?: string; error?: string }> = [];
+          for (const svc of services) {
+            const svcEscaped = escapePsString(svc.Name);
+            try {
+              await runPowerShell(`${action}-Service -Name '${svcEscaped}' -Force -ErrorAction Stop`);
+              const { stdout } = await runPowerShell(`(Get-Service -Name '${svcEscaped}').Status.ToString()`);
+              results.push({ name: svc.Name, action, success: true, newStatus: stdout.trim() });
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err);
+              results.push({ name: svc.Name, action, success: false, error: message });
+            }
+          }
+
+          const summary = {
+            pattern: namePattern,
+            action,
+            totalMatched: services.length,
+            succeeded: results.filter((r) => r.success).length,
+            failed: results.filter((r) => !r.success).length,
+            results,
+          };
+
+          return { content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }] };
+        });
       };
 
-      return { content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }] };
+      if (needsConfirmation()) {
+        const serviceNames = services.map((s) => s.Name).join(", ");
+        const { confirmationId, preview } = requestConfirmation(
+          "services_bulk",
+          { namePattern, action },
+          `Will ${action.toLowerCase()} ${services.length} service(s): ${serviceNames}`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              action: "services_bulk",
+              bulkAction: action,
+              matchedServices: services.map((s) => ({ name: s.Name, currentStatus: s.Status })),
+              count: services.length,
+              confirmationId,
+              preview,
+              instruction: "Call confirm_action with this confirmationId to proceed.",
+            }, null, 2),
+          }],
+        };
+      }
+
+      return await execute();
     }
   );
 
   // ── Tool 4: scheduler_bulk ────────────────────────────────────────────
   server.tool(
     "scheduler_bulk",
-    "Perform an action (Enable, Disable) on all scheduled tasks matching a name pattern.",
+    "Perform an action (Enable, Disable) on all scheduled tasks matching a name pattern. Subject to limits.maxBulkOperations and confirmation flow.",
     {
       namePattern: z.string().describe("Task name pattern (wildcard supported, e.g. '*Backup*', 'MyApp*')"),
       action: z.enum(["Enable", "Disable"]).describe("Action to perform on matching tasks"),
@@ -305,36 +349,77 @@ $stoppedAuto = Get-Service | Where-Object { $_.StartType -eq 'Automatic' -and $_
         };
       }
 
-      // Perform action on each task
-      const results: Array<{ name: string; path: string; action: string; success: boolean; newState?: string; error?: string }> = [];
-      for (const task of tasks) {
-        const taskNameEscaped = escapePsString(task.TaskName);
-        const taskPathEscaped = escapePsString(task.TaskPath);
-        const actionCmd = action === "Enable"
-          ? `Enable-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}' -ErrorAction Stop`
-          : `Disable-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}' -ErrorAction Stop`;
-        try {
-          await runPowerShell(actionCmd);
-          const { stdout } = await runPowerShell(
-            `(Get-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}').State.ToString()`
-          );
-          results.push({ name: task.TaskName, path: task.TaskPath, action, success: true, newState: stdout.trim() });
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          results.push({ name: task.TaskName, path: task.TaskPath, action, success: false, error: message });
-        }
+      // Check bulk limit
+      const maxBulk = getConfig().limits.maxBulkOperations;
+      if (tasks.length > maxBulk) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Too many tasks matched (${tasks.length}). Maximum allowed bulk operations: ${maxBulk}. Narrow your pattern.`,
+          }],
+          isError: true,
+        };
       }
 
-      const summary = {
-        pattern: namePattern,
-        action,
-        totalMatched: tasks.length,
-        succeeded: results.filter((r) => r.success).length,
-        failed: results.filter((r) => !r.success).length,
-        results,
+      const execute = async () => {
+        return await auditedCall("scheduler_bulk", { namePattern, action, count: tasks.length }, async () => {
+          const results: Array<{ name: string; path: string; action: string; success: boolean; newState?: string; error?: string }> = [];
+          for (const task of tasks) {
+            const taskNameEscaped = escapePsString(task.TaskName);
+            const taskPathEscaped = escapePsString(task.TaskPath);
+            const actionCmd = action === "Enable"
+              ? `Enable-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}' -ErrorAction Stop`
+              : `Disable-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}' -ErrorAction Stop`;
+            try {
+              await runPowerShell(actionCmd);
+              const { stdout } = await runPowerShell(
+                `(Get-ScheduledTask -TaskName '${taskNameEscaped}' -TaskPath '${taskPathEscaped}').State.ToString()`
+              );
+              results.push({ name: task.TaskName, path: task.TaskPath, action, success: true, newState: stdout.trim() });
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err);
+              results.push({ name: task.TaskName, path: task.TaskPath, action, success: false, error: message });
+            }
+          }
+
+          const summary = {
+            pattern: namePattern,
+            action,
+            totalMatched: tasks.length,
+            succeeded: results.filter((r) => r.success).length,
+            failed: results.filter((r) => !r.success).length,
+            results,
+          };
+
+          return { content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }] };
+        });
       };
 
-      return { content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }] };
+      if (needsConfirmation()) {
+        const taskNames = tasks.map((t) => t.TaskName).join(", ");
+        const { confirmationId, preview } = requestConfirmation(
+          "scheduler_bulk",
+          { namePattern, action },
+          `Will ${action.toLowerCase()} ${tasks.length} task(s): ${taskNames}`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              action: "scheduler_bulk",
+              bulkAction: action,
+              matchedTasks: tasks.map((t) => ({ name: t.TaskName, path: t.TaskPath, currentState: t.State })),
+              count: tasks.length,
+              confirmationId,
+              preview,
+              instruction: "Call confirm_action with this confirmationId to proceed.",
+            }, null, 2),
+          }],
+        };
+      }
+
+      return await execute();
     }
   );
 }

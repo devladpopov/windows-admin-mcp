@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { escapePsString, runPowerShellChecked, runPowerShellJson } from "../../utils/powershell.js";
+import { checkSafety, needsConfirmation, requestConfirmation } from "../../safety.js";
+import { auditedCall } from "../../audit.js";
 
 export function registerProcessesModule(server: McpServer) {
   server.tool(
@@ -62,7 +64,7 @@ export function registerProcessesModule(server: McpServer) {
 
   server.tool(
     "processes_kill",
-    "Kill (terminate) a process by name or PID.",
+    "Kill (terminate) a process by name or PID. Protected processes (lsass, csrss, etc.) are blocked. If safety.requireConfirmation is enabled, returns a confirmationId.",
     {
       name: z.string().optional().describe("Process name to kill"),
       pid: z.number().optional().describe("Process ID to kill"),
@@ -73,18 +75,44 @@ export function registerProcessesModule(server: McpServer) {
         return { content: [{ type: "text", text: "Either 'name' or 'pid' must be provided." }], isError: true };
       }
 
+      if (name) {
+        const blocked = checkSafety(name);
+        if (blocked) return blocked;
+      }
+
       const forceFlag = force ? " -Force" : "";
-      let cmd: string;
-      if (pid !== undefined) {
-        cmd = `Stop-Process -Id ${Math.floor(pid)}${forceFlag} -ErrorAction Stop`;
-      } else {
-        cmd = `Stop-Process -Name '${escapePsString(name!)}'${forceFlag} -ErrorAction Stop`;
+      const target = pid !== undefined ? `PID ${pid}` : `'${name}'`;
+
+      const execute = async () => {
+        return await auditedCall("processes_kill", { name, pid, force }, async () => {
+          let cmd: string;
+          if (pid !== undefined) {
+            cmd = `Stop-Process -Id ${Math.floor(pid)}${forceFlag} -ErrorAction Stop`;
+          } else {
+            cmd = `Stop-Process -Name '${escapePsString(name!)}'${forceFlag} -ErrorAction Stop`;
+          }
+          await runPowerShellChecked(cmd);
+          return { content: [{ type: "text" as const, text: `Process ${target} terminated successfully.` }] };
+        });
+      };
+
+      if (needsConfirmation()) {
+        const { confirmationId, preview } = requestConfirmation(
+          "processes_kill",
+          { name, pid, force },
+          `Will terminate process ${target}${force ? " (force)" : ""}`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ action: "processes_kill", target, confirmationId, preview, instruction: "Call confirm_action with this confirmationId to proceed." }, null, 2),
+          }],
+        };
       }
 
       try {
-        await runPowerShellChecked(cmd);
-        const target = pid !== undefined ? `PID ${pid}` : `'${name}'`;
-        return { content: [{ type: "text", text: `Process ${target} terminated successfully.` }] };
+        return await execute();
       } catch (e: any) {
         return { content: [{ type: "text", text: `Error killing process: ${e.message}` }], isError: true };
       }

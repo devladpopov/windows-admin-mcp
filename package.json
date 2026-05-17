@@ -1,6 +1,6 @@
 {
   "name": "windows-admin-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MCP server for Windows system administration: Services, Event Viewer, Task Scheduler, and more",
   "keywords": [
     "mcp",

@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { escapePsString, runPowerShellChecked, runPowerShellJson } from "../../utils/powershell.js";
+import { needsConfirmation, requestConfirmation } from "../../safety.js";
+import { auditedCall } from "../../audit.js";
 
 export function registerSchedulerModule(server: McpServer) {
   server.tool(
@@ -155,7 +157,7 @@ export function registerSchedulerModule(server: McpServer) {
 
   server.tool(
     "scheduler_delete",
-    "Delete a scheduled task.",
+    "Delete a scheduled task. If safety.requireConfirmation is enabled, returns a confirmationId.",
     {
       taskName: z.string().describe("Task name"),
       taskPath: z.string().optional().describe("Task path"),
@@ -163,8 +165,30 @@ export function registerSchedulerModule(server: McpServer) {
     async ({ taskName, taskPath }) => {
       const name = escapePsString(taskName);
       const path = escapePsString(taskPath || "\\");
-      await runPowerShellChecked(`Unregister-ScheduledTask -TaskName '${name}' -TaskPath '${path}' -Confirm:$false`);
-      return { content: [{ type: "text", text: `Task '${taskName}' deleted successfully.` }] };
+
+      const execute = async () => {
+        return await auditedCall("scheduler_delete", { taskName, taskPath }, async () => {
+          await runPowerShellChecked(`Unregister-ScheduledTask -TaskName '${name}' -TaskPath '${path}' -Confirm:$false`);
+          return { content: [{ type: "text" as const, text: `Task '${taskName}' deleted successfully.` }] };
+        });
+      };
+
+      if (needsConfirmation()) {
+        const { confirmationId, preview } = requestConfirmation(
+          "scheduler_delete",
+          { taskName, taskPath },
+          `Will delete scheduled task '${taskName}' at path '${taskPath || "\\"}'`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ action: "scheduler_delete", target: taskName, confirmationId, preview, instruction: "Call confirm_action with this confirmationId to proceed." }, null, 2),
+          }],
+        };
+      }
+
+      return await execute();
     }
   );
 

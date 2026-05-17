@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { escapePsString, runPowerShellChecked, runPowerShellJson } from "../../utils/powershell.js";
+import { checkSafety, needsConfirmation, requestConfirmation } from "../../safety.js";
+import { auditedCall } from "../../audit.js";
 
 export function registerServicesModule(server: McpServer) {
   server.tool(
@@ -51,33 +53,83 @@ export function registerServicesModule(server: McpServer) {
 
   server.tool(
     "services_stop",
-    "Stop a Windows service.",
+    "Stop a Windows service. If safety.requireConfirmation is enabled, returns a confirmationId that must be passed to confirm_action to proceed.",
     {
       name: z.string().describe("Service name to stop"),
       force: z.boolean().optional().describe("Force stop (also stops dependent services)"),
     },
     async ({ name, force }) => {
+      const blocked = checkSafety(name);
+      if (blocked) return blocked;
+
       const escaped = escapePsString(name);
       const forceFlag = force ? " -Force" : "";
-      await runPowerShellChecked(`Stop-Service -Name '${escaped}'${forceFlag}`);
-      const result = await runPowerShellJson(`Get-Service -Name '${escaped}' | Select-Object Name, Status`);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+
+      const execute = async () => {
+        return await auditedCall("services_stop", { name, force }, async () => {
+          await runPowerShellChecked(`Stop-Service -Name '${escaped}'${forceFlag}`);
+          const result = await runPowerShellJson(`Get-Service -Name '${escaped}' | Select-Object Name, Status`);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        });
+      };
+
+      if (needsConfirmation()) {
+        const { confirmationId, preview } = requestConfirmation(
+          "services_stop",
+          { name, force },
+          `Will stop service '${name}'${force ? " (force, including dependents)" : ""}`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ action: "services_stop", target: name, confirmationId, preview, instruction: "Call confirm_action with this confirmationId to proceed." }, null, 2),
+          }],
+        };
+      }
+
+      return await execute();
     }
   );
 
   server.tool(
     "services_restart",
-    "Restart a Windows service.",
+    "Restart a Windows service. If safety.requireConfirmation is enabled, returns a confirmationId that must be passed to confirm_action to proceed.",
     {
       name: z.string().describe("Service name to restart"),
       force: z.boolean().optional().describe("Force restart (also restarts dependent services)"),
     },
     async ({ name, force }) => {
+      const blocked = checkSafety(name);
+      if (blocked) return blocked;
+
       const escaped = escapePsString(name);
       const forceFlag = force ? " -Force" : "";
-      await runPowerShellChecked(`Restart-Service -Name '${escaped}'${forceFlag}`);
-      const result = await runPowerShellJson(`Get-Service -Name '${escaped}' | Select-Object Name, Status`);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+
+      const execute = async () => {
+        return await auditedCall("services_restart", { name, force }, async () => {
+          await runPowerShellChecked(`Restart-Service -Name '${escaped}'${forceFlag}`);
+          const result = await runPowerShellJson(`Get-Service -Name '${escaped}' | Select-Object Name, Status`);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        });
+      };
+
+      if (needsConfirmation()) {
+        const { confirmationId, preview } = requestConfirmation(
+          "services_restart",
+          { name, force },
+          `Will restart service '${name}'${force ? " (force, including dependents)" : ""}`,
+          execute
+        );
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({ action: "services_restart", target: name, confirmationId, preview, instruction: "Call confirm_action with this confirmationId to proceed." }, null, 2),
+          }],
+        };
+      }
+
+      return await execute();
     }
   );
 
