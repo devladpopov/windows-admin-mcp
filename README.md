@@ -1,5 +1,9 @@
 # windows-admin-mcp
 
+<p align="center">
+  <img src="assets/hero-en.jpg" alt="42 Tools for Windows Administration" width="700">
+</p>
+
 AI SRE Agent for Windows. An MCP server that gives AI assistants (Claude Desktop, Cursor, Windsurf, Claude Code) the ability to manage, monitor, and diagnose Windows systems.
 
 Not just a PowerShell wrapper: includes multi-step diagnostics, trend analysis, safety controls, and audit logging.
@@ -242,6 +246,10 @@ MIT
 ---
 
 # windows-admin-mcp (RU)
+
+<p align="center">
+  <img src="assets/hero-ru.jpg" alt="42 инструмента для Windows-администрирования" width="700">
+</p>
 
 AI SRE агент для Windows. MCP-сервер, позволяющий AI-ассистентам управлять, мониторить и диагностировать Windows.
 
