@@ -53,7 +53,7 @@ Add to your MCP config (`.cursor/mcp.json`, `.vscode/mcp.json`, etc.):
 ### Claude Code
 
 ```bash
-claude mcp add windows-admin npx -y windows-admin-mcp
+claude mcp add windows-admin -- npx -y windows-admin-mcp
 ```
 
 ## Modules
