@@ -21,9 +21,26 @@ if (process.platform !== "win32") {
 // Load configuration (config.json next to dist/ or via WINDOWS_ADMIN_MCP_CONFIG env)
 const config = loadConfig();
 
+// Count enabled modules
+const enabledModules = Object.entries(config.modules).filter(([, v]) => v).length;
+const toolCounts: Record<string, number> = {
+  services: 6, events: 5, scheduler: 8, processes: 4,
+  network: 4, diagnostics: 4, safety: 6, observability: 5,
+};
+const totalTools = Object.entries(config.modules)
+  .filter(([, v]) => v)
+  .reduce((sum, [k]) => sum + (toolCounts[k] || 0), 0);
+
+// stderr is safe to write to — stdout is reserved for JSON-RPC
+console.error(`windows-admin-mcp v1.0.1`);
+console.error(`${totalTools} tools, ${enabledModules} modules, 3 resources`);
+console.error(`Waiting for MCP client (Claude Desktop, Cursor, Claude Code)...`);
+console.error(`This server communicates via stdin/stdout JSON-RPC.`);
+console.error(`If you ran this manually, add it to your MCP client config instead.`);
+
 const server = new McpServer({
   name: "windows-admin-mcp",
-  version: "1.0.0",
+  version: "1.0.1",
 });
 
 if (config.modules.services) registerServicesModule(server);
