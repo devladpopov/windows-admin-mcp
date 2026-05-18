@@ -12,8 +12,48 @@ Not just a PowerShell wrapper: includes multi-step diagnostics, trend analysis, 
 
 ## Quick Start
 
+Interactive setup — detects your MCP clients and configures them automatically:
+
 ```bash
-npx windows-admin-mcp
+npx windows-admin-mcp --setup
+```
+
+Or configure manually — add to your client's config:
+
+### Claude Desktop
+
+Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "windows-admin": {
+      "command": "npx",
+      "args": ["-y", "windows-admin-mcp"]
+    }
+  }
+}
+```
+
+### Cursor / VS Code / Windsurf
+
+Add to your MCP config (`.cursor/mcp.json`, `.vscode/mcp.json`, etc.):
+
+```json
+{
+  "servers": {
+    "windows-admin": {
+      "command": "npx",
+      "args": ["-y", "windows-admin-mcp"]
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add windows-admin npx -y windows-admin-mcp
 ```
 
 ## Modules
@@ -152,49 +192,6 @@ Create a `config.json` next to the installed package, or set `WINDOWS_ADMIN_MCP_
 }
 ```
 
-## Setup
-
-### Claude Desktop
-
-Add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "windows-admin": {
-      "command": "npx",
-      "args": ["-y", "windows-admin-mcp"]
-    }
-  }
-}
-```
-
-### Cursor / Windsurf
-
-```json
-{
-  "windows-admin": {
-    "command": "npx",
-    "args": ["-y", "windows-admin-mcp"]
-  }
-}
-```
-
-### Claude Code
-
-Add to `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "windows-admin": {
-      "command": "npx",
-      "args": ["-y", "windows-admin-mcp"]
-    }
-  }
-}
-```
-
 ## Usage Examples
 
 **"Why is SQL Server not working?"**
@@ -259,8 +256,23 @@ AI SRE агент для Windows. MCP-сервер, позволяющий AI-а
 
 ## Быстрый старт
 
+Автоматическая настройка — определяет установленные MCP-клиенты и конфигурирует их:
+
 ```bash
-npx windows-admin-mcp
+npx windows-admin-mcp --setup
+```
+
+Или вручную — добавьте в конфиг Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "windows-admin": {
+      "command": "npx",
+      "args": ["-y", "windows-admin-mcp"]
+    }
+  }
+}
 ```
 
 ## Модули
